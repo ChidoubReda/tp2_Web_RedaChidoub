@@ -1,4 +1,4 @@
-package ma.emsi.chidoub.tp0_redachidoub;
+package ma.emsi.chidoub.tp2_web_redachidoub;
 
 import java.io.*;
 

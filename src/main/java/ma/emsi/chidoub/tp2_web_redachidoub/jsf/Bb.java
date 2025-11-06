@@ -1,4 +1,4 @@
-package ma.emsi.chidoub.tp0_redachidoub.jsf;
+package ma.emsi.chidoub.tp2_web_redachidoub.jsf;
 
 import jakarta.faces.application.FacesMessage;
 import jakarta.faces.context.FacesContext;
