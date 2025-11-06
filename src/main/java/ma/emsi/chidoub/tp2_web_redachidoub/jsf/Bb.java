@@ -6,11 +6,11 @@ import jakarta.faces.model.SelectItem;
 import jakarta.faces.view.ViewScoped;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
+import ma.emsi.chidoub.tp2_web_redachidoub.llm.LlmClient;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Backing bean pour la page JSF index.xhtml.
@@ -21,154 +21,112 @@ import java.util.Locale;
 @ViewScoped
 public class Bb implements Serializable {
 
-    /**
-     * Rôle "système" que l'on attribuera plus tard à un LLM.
-     * Valeur par défaut que l'utilisateur peut modifier.
-     * Possible d'écrire un nouveau rôle dans la liste déroulante.
-     */
+    @Inject
+    private LlmClient llm;
+
+    /** Rôle "système" choisi/modifiable au tout début par l'utilisateur. */
     private String roleSysteme;
 
-    /**
-     * Quand le rôle est choisi par l'utilisateur dans la liste déroulante,
-     * il n'est plus possible de le modifier (voir code de la page JSF), sauf si on veut un nouveau chat.
-     */
+    /** Une fois le rôle choisi (premier envoi), on le verrouille. */
     private boolean roleSystemeChangeable = true;
 
-    /**
-     * Liste de tous les rôles de l'API prédéfinis.
-     */
+    /** Liste des rôles prédéfinis pour la liste déroulante. */
     private List<SelectItem> listeRolesSysteme;
 
-    /**
-     * Dernière question posée par l'utilisateur.
-     */
+    /** Dernière question posée par l'utilisateur. */
     private String question;
-    /**
-     * Dernière réponse de l'API OpenAI.
-     */
+
+    /** Dernière réponse du LLM. */
     private String reponse;
-    /**
-     * La conversation depuis le début.
-     */
+
+    /** Historique texte de la conversation. */
     private StringBuilder conversation = new StringBuilder();
 
-    /**
-     * Contexte JSF. Utilisé pour qu'un message d'erreur s'affiche dans le formulaire.
-     */
+    /** Contexte JSF pour afficher les messages d'erreur. */
     @Inject
     private FacesContext facesContext;
 
-    /**
-     * Obligatoire pour un bean CDI (classe gérée par CDI), s'il y a un autre constructeur.
-     */
-    public Bb() {
-    }
+    public Bb() {}
 
-    public String getRoleSysteme() {
-        return roleSysteme;
-    }
+    public String getRoleSysteme() { return roleSysteme; }
+    public void setRoleSysteme(String roleSysteme) { this.roleSysteme = roleSysteme; }
+    public boolean isRoleSystemeChangeable() { return roleSystemeChangeable; }
 
-    public void setRoleSysteme(String roleSysteme) {
-        this.roleSysteme = roleSysteme;
-    }
+    public String getQuestion() { return question; }
+    public void setQuestion(String question) { this.question = question; }
 
-    public boolean isRoleSystemeChangeable() {
-        return roleSystemeChangeable;
-    }
+    public String getReponse() { return reponse; }
+    public void setReponse(String reponse) { this.reponse = reponse; }
 
-    public String getQuestion() {
-        return question;
-    }
-
-    public void setQuestion(String question) {
-        this.question = question;
-    }
-
-    public String getReponse() {
-        return reponse;
-    }
+    public String getConversation() { return conversation.toString(); }
+    public void setConversation(String conversation) { this.conversation = new StringBuilder(conversation); }
 
     /**
-     * setter indispensable pour le textarea.
-     *
-     * @param reponse la réponse à la question.
-     */
-    public void setReponse(String reponse) {
-        this.reponse = reponse;
-    }
-
-    public String getConversation() {
-        return conversation.toString();
-    }
-
-    public void setConversation(String conversation) {
-        this.conversation = new StringBuilder(conversation);
-    }
-
-    /**
-     * Envoie la question au serveur.
-     * En attendant de l'envoyer à un LLM, le serveur fait un traitement quelconque, juste pour tester :
-     * Le traitement consiste à copier la question en minuscules et à l'entourer avec "||". Le rôle système
-     * est ajouté au début de la première réponse.
-     *
-     * @return null pour rester sur la même page.
+     * Envoie la question au LLM via LlmClient.
+     * - Au premier message : fixe le rôle système et verrouille le sélecteur.
+     * - Ensuite : délègue au LLM et ajoute la réponse à la conversation.
      */
     public String envoyer() {
         if (question == null || question.isBlank()) {
-            // Erreur ! Le formulaire va être réaffiché en réponse à la requête POST, avec un message d'erreur.
-            FacesMessage message = new FacesMessage(FacesMessage.SEVERITY_ERROR,
-                    "Texte question vide", "Il manque le texte de la question");
-            facesContext.addMessage(null, message);
+            facesContext.addMessage(null, new FacesMessage(
+                    FacesMessage.SEVERITY_ERROR,
+                    "Texte question vide",
+                    "Il manque le texte de la question"));
             return null;
         }
-        // Entourer la réponse avec "||".
-        this.reponse = "||";
-        // Si la conversation n'a pas encore commencé, ajouter le rôle système au début de la réponse
-        if (this.conversation.isEmpty()) {
-            // Ajouter le rôle système au début de la réponse
-            this.reponse += roleSysteme.toUpperCase(Locale.FRENCH) + "\n";
-            // Invalide le bouton pour changer le rôle système
-            this.roleSystemeChangeable = false;
-        }
-        this.reponse += question.toLowerCase(Locale.FRENCH) + "||";
-        // La conversation contient l'historique des questions-réponses depuis le début.
-        String reversed = new StringBuilder(question).reverse().toString();
-        this.reponse += "\nVoici la phrase inversée : " + reversed;
 
-        afficherConversation();
-        return null;
+        try {
+            // Au tout début de la conversation, on positionne le rôle système et on le verrouille
+            if (this.conversation.isEmpty()) {
+                llm.setSystemRole(roleSysteme);
+                this.roleSystemeChangeable = false;
+            }
+
+            // Appel direct au LLM
+            this.reponse = llm.ask(question);
+
+            // Historiser dans le textarea
+            afficherConversation();
+            return null; // rester sur la même page
+        } catch (Exception e) {
+            facesContext.addMessage(null, new FacesMessage(
+                    FacesMessage.SEVERITY_ERROR,
+                    "Erreur LLM",
+                    "Impossible d'obtenir une réponse (" + e.getMessage() + ")"));
+            return null;
+        }
     }
 
     /**
-     * Pour un nouveau chat.
-     * Termine la portée view en retournant "index" (la page index.xhtml sera affichée après le traitement
-     * effectué pour construire la réponse) et pas null. null aurait indiqué de rester dans la même page (index.xhtml)
-     * sans changer de vue.
-     * Le fait de changer de vue va faire supprimer l'instance en cours du backing bean par CDI et donc on reprend
-     * tout comme au début puisqu'une nouvelle instance du backing va être utilisée par la page index.xhtml.
-     * @return "index"
+     * Pour un nouveau chat :
+     * - Réinitialise la mémoire côté LLM (pas de rôle système injecté).
+     * - Change de vue pour recréer un nouveau backing bean.
      */
     public String nouveauChat() {
+        try {
+            llm.setSystemRole(null); // clear mémoire + pas de SystemMessage ajouté
+        } catch (Exception ignored) {
+        }
         return "index";
     }
 
-    /**
-     * Pour afficher la conversation dans le textArea de la page JSF.
-     */
+    /** Ajoute la question/réponse à l'historique affiché. */
     private void afficherConversation() {
-        this.conversation.append("== User:\n").append(question).append("\n== Serveur:\n").append(reponse).append("\n");
+        this.conversation
+                .append("== User:\n").append(question)
+                .append("\n== Serveur:\n").append(reponse)
+                .append("\n");
     }
 
+    /** Rôles prédéfinis pour la liste déroulante. */
     public List<SelectItem> getRolesSysteme() {
         if (this.listeRolesSysteme == null) {
-            // Génère les rôles de l'API prédéfinis
             this.listeRolesSysteme = new ArrayList<>();
-            // Vous pouvez évidemment écrire ces rôles dans la langue que vous voulez.
+
             String role = """
                     You are a helpful assistant. You help the user to find the information they need.
                     If the user type a question, you answer it.
                     """;
-            // 1er argument : la valeur du rôle, 2ème argument : le libellé du rôle
             this.listeRolesSysteme.add(new SelectItem(role, "Assistant"));
 
             role = """
@@ -186,9 +144,7 @@ public class Bb implements Serializable {
                     """;
             this.listeRolesSysteme.add(new SelectItem(role, "Guide touristique"));
         }
-
         return this.listeRolesSysteme;
     }
-
 }
 

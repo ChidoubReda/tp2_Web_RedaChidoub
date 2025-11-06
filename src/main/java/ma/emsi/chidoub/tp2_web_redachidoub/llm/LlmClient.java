@@ -31,7 +31,7 @@ public class LlmClient {
         String Key = System.getenv("GEMINI_API_KEY");
         if (Key == null || Key.isBlank()) {
             throw new IllegalStateException(
-                    "Erreur : variable d'environnement GEMINI_KEY absente ou vide."
+                    "Erreur :  The environnement variable GEMINI_KEY is absent."
             );
         }
 
